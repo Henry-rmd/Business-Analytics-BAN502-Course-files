@@ -1,0 +1,416 @@
+# Module 3 Assignment 2
+
+## Heinrich Wyschka
+
+
+```{r setup, include=FALSE}
+#install.packages("e1071")
+#install.packages("ROCR")
+#install.packages("GGally")
+```
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(ROCR)
+library(e1071)
+library(GGally)
+```
+
+When I read the word violator for this assignment I thought immediately of one of my favourite albums by Depeche Mode: 
+
+```{r}
+knitr::include_graphics("violator.jpg")
+```
+
+
+```{r}
+parole <- read_csv("parole.csv")
+
+parole <- parole %>%  
+  mutate(male = as_factor(male)) %>%
+  mutate(race = as_factor(race)) %>%
+  mutate(state = as_factor(state)) %>%
+  mutate(crime = as_factor(crime)) %>%
+  mutate(multiple.offenses = as_factor(multiple.offenses)) %>%
+  mutate(violator = as_factor(violator))
+parole <- parole %>%  
+  mutate(male = fct_recode(male, "male" = "1", "female" = "0")) %>%
+  mutate(race = fct_recode(race, "white" = "1", "non_white" = "2")) %>%
+  mutate(state = fct_recode(state, "Kentucky" = "2", "Louisiana" = "3", "Virginia" = "4", "rest of US" = "1")) %>%
+  mutate(crime = fct_recode(crime, "larceny" = "2", "drugs" = "3", "driving" = "4", "rest_of_crimes" = "1")) %>%
+  mutate(multiple.offenses = fct_recode(multiple.offenses, "multiple_offenses" = "1", "single_offense" = "0")) %>%
+  mutate(violator = fct_recode(violator, "violated_parole" = "1", "no_violation" = "0"))
+```
+
+
+### Task 1
+
+
+```{r}
+set.seed(12345)
+parole_split = initial_split(parole, prob = 0.70, strata = violator)
+train = training(parole_split)
+test = testing(parole_split)
+```
+
+
+### Task 2
+
+I would like to get an overview of the data we have:
+
+```{r}
+str(train)
+summary(train)
+```
+
+The structure of the data looks correct; it does not look that there are any missing data (no "NA"'s).
+
+#### Visuals/Tables
+
+Gender
+```{r}
+ggplot(train, aes(x=male, fill = violator)) + geom_bar()
+```
+
+It is clear that more men are on parole than women, but it is unclear if more men violated parole than women. Let's clear this up with making the bar 100%:
+
+```{r}
+ggplot(train, aes(x=male, fill = violator)) + geom_bar(position = "fill")
+```
+
+It looks like on average men and women have violated their parole just the same. I can make a table to see the actual number:
+
+```{r}
+t1 = table(train$violator, train$male) #create a table object
+prop.table(t1, margin = 2 ) #crosstab with proportions
+```
+
+
+The table reveals that a small fraction of men violated parole more than women, but it is nearly identical. Let's take a look at other factors:
+
+Race
+```{r}
+ggplot(train, aes(x=race, fill = violator)) + geom_bar()
+```
+
+Race 100%
+```{r}
+ggplot(train, aes(x=race, fill = violator)) + geom_bar(position = "fill")
+```
+
+Again, race is nearly identical for the variable "white - non-white". Maybe age is more revealing about violating parole or not:
+
+Age
+```{r}
+ggplot(train, aes(age, fill = violator)) + geom_boxplot()
+```
+
+The boxplot above is not a clear indication, but one can say that the older you are, the less likely you will violate parole. The median age for violation is around 34, non-violations closer to 35. Also the spread (the middle half of the dataset) of non-violations extents further for non-violations: from around 26 to 43 for non-violations and ~26.5 to 41 for violations. The full spread starts for both classes at 18 years old, but end around 52 for violations and extends all the way to 66 for non-violations.
+
+Maybe a histogram will reveal more insight about age:
+
+
+```{r}
+ggplot(train, aes(age, fill = violator)) + geom_histogram()
+```
+
+There is a steep incline in parole numbers in general between the ages of 18 and 25, then plateauing around 25 paroles between the ages 25 to 45, then sharply declines to nearly 0 after age 60. In contrast, parole violation numbers stay relatively same: around 2-3 from age 20 to around 46, slightly trailing off after age 46 and no violations after age 52. There are some spikes (age 30 to over 6) and lows (none at age 35 and 50), but the trend is clear: there are much less violations in general and they do not extend into older age.
+
+So far age looks like the clearest indicator of violating parole or not, but let's look at others, still:
+
+State
+```{r}
+ggplot(train, aes(x=state, fill = violator)) + geom_bar()
+```
+
+The dataset is heavily dominated by parolees from Virginia, with the least numbers coming from Louisiana. this might be deceiving again, so I set the numbers to 100%:
+
+```{r}
+ggplot(train, aes(x=state, fill = violator)) + geom_bar(position = "fill")
+```
+
+
+Here, it is clear that Virginia might have the most parolees, but obviously the lowest number of parole violations, whereas Louisiana has the highest percentage of violations: around 39%. Kentucky and the rest of the US have similar numbers. I believe "state" is another good indicator if you violate parole or not.
+
+Time Served
+```{r}
+ggplot(train, aes(x=time.served, fill = violator)) + geom_boxplot()
+```
+
+For Time Served one can say if you served longer the less likely you are going to violate your parole. Which makes sense to me, because you do not want to go back to jail/prison by violating parole after being there for long.
+
+Max Sentence
+```{r}
+ggplot(train, aes(x=max.sentence, fill = violator)) + geom_bar()
+```
+
+There seems to be quite a difference in how many years sentence a parole received (independent from how long the parolee served). It tells me that this might be a good variable to predict parole violation. Maybe we can learn more from a boxplot:
+
+```{r}
+ggplot(train, aes(x=max.sentence, fill = violator)) + geom_boxplot()
+```
+
+The median maximum sentence is around 12.5 year (!), lower for violators of their parole (~11 years) and higher for non-violators(~13 years). This seems counterintuitive to me: The lower your sentence the more likely you are violating you parole? I guess the parolees did not know yet what jail/prison will be like. Also there is a huge discrepancy between years sentenced and years served. Sentenced seems around 13 years, but these parolees served "only" a little bit over 4 years on average.   
+
+Multiple Offenses
+```{r}
+ggplot(train, aes(x=multiple.offenses, fill = violator)) + geom_bar()
+```
+
+```{r}
+ggplot(train, aes(x=multiple.offenses, fill = violator)) + geom_bar(position = "fill")
+```
+
+This graph shows that multiple offenses lead to more parole violations. This might be another good variable to use for predictions. 
+
+
+The last variable to indicate (non)-violation of parole is "crime":
+
+Crime
+```{r}
+ggplot(train, aes(x=crime, fill = violator)) + geom_bar()
+```
+
+I'd rather see percentages of those crimes:
+
+```{r}
+ggplot(train, aes(x=crime, fill = violator)) + geom_bar(position = "fill")
+```
+
+As shown above it is less clear to predict if you violate parole or not depending on the crime you committed. The only "straggler" are driving-related offenses, which offers less violations than the other crimes.
+
+Good predictive variables, to me, for "violator" are going to be:
+- Age, State, Max Sentence, Multiple Offenses
+
+Less predictive will be:
+- Time Served, Gender, Crime and Race
+
+### Task 3
+
+The variable to looked to have the most predictibility for violating parole in the data was "max.sentence":
+
+Maximum Sentence Model
+```{r}
+parole_ms_model = 
+  logistic_reg() %>% #note the use of logistic_reg
+  set_engine("glm") #standard logistic regression engine is glm
+
+parole_ms_recipe = recipe(violator ~ max.sentence, train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) #exclude the response variable from being dummy converted  
+
+parole_ms_wf = workflow() %>%
+  add_recipe(parole_ms_recipe) %>% 
+  add_model(parole_ms_model)
+
+parole_ms_fit = fit(parole_ms_wf, train)
+summary(parole_ms_fit$fit$fit$fit)
+```
+
+This model has a single variable as a predictor (although we have several other predictors) and is therefore not too good of a model to predict if a person is going to be a violating their parole or not, YET. I need more models to compare its AIC of 358.29.
+
+### Task 4
+In order to comment on the quality of 'my' predictive variables above for violator I will setup two other models so I can compare their AICs. One is going to use the "less predictive variables" and the other "all variables", then I will use the "good variables" and will compare those three with the max.sentence model. Let me start with the variables I deemed "less predictive":
+
+Time Served, Gender, Crime and Race
+
+```{r}
+parole_less_model = 
+  logistic_reg() %>% #note the use of logistic_reg
+  set_engine("glm") #standard logistic regression engine is glm
+
+parole_less_recipe = recipe(violator ~ time.served + male + crime + race, train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) #exclude the response variable from being dummy converted  
+
+parole_less_wf = workflow() %>%
+  add_recipe(parole_less_recipe) %>% 
+  add_model(parole_less_model)
+
+parole_less_fit = fit(parole_less_wf, train)
+summary(parole_less_fit$fit$fit$fit)
+```
+
+The "less" variables have an AIC of 370.94, which is higher than just the "max.sentence" model (358.29). Even though we have more variables the model has less predictive power than the single "max sentence" variable. Let's compare with more models. Next I will run a model with all variables available:
+
+```{r}
+parole_all_model = 
+  logistic_reg() %>% #note the use of logistic_reg
+  set_engine("glm") #standard logistic regression engine is glm
+
+parole_all_recipe = recipe(violator ~ ., train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) #exclude the response variable from being dummy converted  
+
+parole_all_wf = workflow() %>%
+  add_recipe(parole_all_recipe) %>% 
+  add_model(parole_all_model)
+
+parole_all_fit = fit(parole_all_wf, train)
+summary(parole_all_fit$fit$fit$fit)
+```
+
+The AIC number has lowered to 300.08. This is better than previous models. Finally, let's choose the "good predictive variables" for "violator" :
+- Age, State, Max Sentence, Multiple Offenses
+
+```{r}
+parole_model = 
+  logistic_reg() %>% #note the use of logistic_reg
+  set_engine("glm") #standard logistic regression engine is glm
+
+parole_recipe = recipe(violator ~ age + state + max.sentence + multiple.offenses, train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) #exclude the response variable from being dummy converted  
+
+parole_wf = workflow() %>%
+  add_recipe(parole_recipe) %>% 
+  add_model(parole_model)
+
+parole_fit = fit(parole_wf, train)
+summary(parole_fit$fit$fit$fit)
+```
+
+YES! I was able to lower the AIC further to 292.59. Because of the variability I saw in the graphs I created for max.sentence earlier, I believed it to be a great variable to predict violators. It does not in this model, though; it is not above the p-value threshold of 0.05 (it is at 0.37). 
+I assume, because Virginia has a large number of parolees, it seems to be significant in predicting violators; it has the lowest p-value of them all. It also has strong negative slope, which seems correct, because most parolees where from Virginia and a large percentage of Virginians were not violating their parole. 
+Max.sentence's positive coefficient also makes sense: The higher the sentence, the less likely to be a parole violator. I saw that relationship in the boxplot above. Although I did see quite a difference in violators by age in the visuals, the p-value is a dismal 0.95, the highest I have seen so far in our model making. I still would use this model, though, in order to predict parole violations, because it has the lowest AIC of the models created so far.
+
+### Task 5
+
+State, Multiple Offenses, Race Model
+
+```{r}
+parole_smor_model = 
+  logistic_reg() %>% #note the use of logistic_reg
+  set_engine("glm") #standard logistic regression engine is glm
+
+parole_smor_recipe = recipe(violator ~ state + multiple.offenses + race, train) %>%
+  step_dummy(all_nominal(), -all_outcomes()) #exclude the response variable from being dummy converted  
+
+parole_smor_wf = workflow() %>%
+  add_recipe(parole_smor_recipe) %>% 
+  add_model(parole_smor_model)
+
+parole_smor_fit = fit(parole_smor_wf, train)
+
+summary(parole_smor_fit$fit$fit$fit)
+```
+
+Oh, wow. I am genuinely surprised, because I did not think that another combination of variables could be better than what I have choosen so far. Significant variables:
+Again *Virginia* has a low p-value below 0.05 and so does multiple.offenses. The intercept must be *rest of the US* as I do not see that variable in the list and also has a low p-value under 0.05. All other variables are above 0.05 and are not significant.
+
+### Task 6
+
+What is the predicted probability of parole violation of the two following parolees?  
+
+- Parolee 1: Louisiana with multiple offenses and white race: *44.28%*  
+
+- Parolee 2: Kentucky with no multiple offenses and other race: *15.21%*
+
+Parolee 1
+```{r}
+newdata = data.frame(state = "Louisiana", multiple.offenses = "multiple_offenses", race = "white")
+predict(parole_smor_fit, newdata, type="prob")
+```
+
+Parolee 2: Kentucky with no multiple offenses and other race
+
+```{r}
+newdata = data.frame(state = "Kentucky", multiple.offenses = "single_offense", race = "non_white")
+predict(parole_smor_fit, newdata, type="prob")
+```
+
+### Task 7
+
+
+```{r}
+predictions = predict(parole_smor_fit, train, type="prob")[2] #develop predicted probabilities
+
+ROCRpred = prediction(predictions, train$violator) 
+
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+
+```{r}
+opt.cut = function(perf, pred){
+    cut.ind = mapply(FUN=function(x, y, p){
+        d = (x - 0)^2 + (y-1)^2
+        ind = which(d == min(d))
+        c(sensitivity = y[[ind]], specificity = 1-x[[ind]], 
+            cutoff = p[[ind]])
+    }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+
+### Task 8
+
+accuracy = 0.8067 (below)  
+
+sensitivity = 0.7119 (above)   
+
+specificity = 0.7969 (above)  
+
+
+
+```{r}
+t3 = table(train$violator,predictions > 0.1070172)
+t3
+(t3[1,1]+t3[2,2])/nrow(train)
+```
+
+What are the implications of incorrectly classifying a parolee?
+
+Incorrectly classifying parolees could have the consequences that non-violators will get treated too harshly or restrictively which might lead to a relaps into criminailty. Whereas likely violators get treated too softly which might lead to the same outcome, because "it wasn't too bad". It  might also not provide parolee with the right resources in order to get back on track and be part of society. A parolee supervisor might think of a parolee as non-violating, but if he is mis-classified that parolee might be one of the most likely parole violators. As most things are tied to moeny, I am sure that money can be saved by police departments in by identifiying parolees correctly.
+
+### Task 9
+
+I ran several tables to identify maximum accuarcy and saw that I could not raise accuracy of 0.8896 above a probability threshold of 0.5. I also discovered an error message for any threshold above 0.547: "Subscript out of bounds". I was unable to resolve this issue, but was unable to raise accuracy after 0.5 anyways. I choose a probability threshold opf 0.547.
+
+```{r}
+t4.1 = table(train$violator,predictions > 0.2)
+t4.1
+(t4.1[1,1]+t4.1[2,2])/nrow(train)
+```
+
+```{r}
+t4.2 = table(train$violator,predictions > 0.3)
+t4.2
+(t4.2[1,1]+t4.2[2,2])/nrow(train)
+```
+
+```{r}
+t4 = table(train$violator,predictions > 0.5)
+t4
+(t4[1,1]+t4[2,2])/nrow(train)
+```
+
+```{r}
+t5 = table(train$violator,predictions > 0.5)
+t5
+(t5[1,1]+t5[2,2])/nrow(train)
+```
+
+```{r}
+t6 = table(train$violator,predictions > 0.54)
+t6
+(t6[1,1]+t6[2,2])/nrow(train)
+```
+
+```{r}
+t7 = table(train$violator,predictions > 0.547)
+t7
+(t7[1,1]+t7[2,2])/nrow(train)
+```
+
+### Task 10
+
+The probability threshold of 0.547 from Task 9 will result in an accuracy of 92.26%
+
+```{r}
+test_predictions = predict(parole_smor_fit, test, type="prob")[2]
+```
+
+```{r}
+t10 = table(test$violator,test_predictions > 0.546)
+t10
+(t10[1,1]+t10[2,2])/nrow(test)
+```

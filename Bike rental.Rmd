@@ -1,0 +1,245 @@
+# Module 2 Assignment 2
+## Heinrich Wyschka
+
+```{r}
+#install.packages("car")
+#install.packages("glmnet")
+#install.packages("gridExtra")
+```
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(glmnet)
+library(GGally)
+library(ggcorrplot)
+library(MASS)
+library("car")
+library(lubridate)
+library(lmtest)
+library(gridExtra)
+```
+
+
+### Task 1
+
+```{r}
+bike = read_csv("bike_cleaned.csv")
+bike = bike %>% mutate(dteday = mdy(dteday))
+bike = bike %>% mutate_if(is.character, as.factor)
+bike = bike %>% mutate(hr= as_factor(hr))
+#str(bike)
+#summary(bike)
+```
+
+Why do we convert the “hr” variable into factor? Why not just leave as numbers?  
+
+We want to ensure that hr values are not treated as numbers, but as a factor with levels. Factors are categorical variables and we want to use them for modeling. A model will use hr data correctly. I assume that we will not use hr for arithmetic operations.
+
+
+### Task 2
+
+```{r}
+bike_select = bike %>% dplyr::select("temp","atemp","hum","windspeed","count")
+
+ggcorr(bike_select,label = TRUE,label_round = 3)
+
+corr = round(cor(bike_select), 2)
+ggcorrplot(corr, hc.order = FALSE, type = "lower",lab = TRUE, outline.color = "black")
+```
+
+
+Ignoring the "casual" and "registered" columns the strongest correlation with count is "temp" with 0.405 followed by "atemp" with 0.401.
+
+
+### Task 3
+
+```{r}
+p1 = ggplot(bike,aes(x=season,y=count)) + geom_boxplot()
+p2 = ggplot(bike,aes(x=mnth,y=count)) + geom_boxplot()
+p3 = ggplot(bike,aes(x=hr,y=count)) + geom_boxplot()
+p4 = ggplot(bike,aes(x=holiday,y=count)) + geom_boxplot()
+p5 = ggplot(bike,aes(x=weekday,y=count)) + geom_boxplot()
+p6 = ggplot(bike,aes(x=workingday,y=count)) + geom_boxplot()
+p7 = ggplot(bike,aes(x=weathersit,y=count)) + geom_boxplot()
+grid.arrange(p1,p2,p3,p4,p5,p6,p7,ncol=2)
+```
+
+From the grid I concur that "hr" seems to affect "count" most obvious. Month is also clearly affecting count, but I will create separate boxplots to see more detail.  
+
+```{r}
+ggplot(bike,aes(x=hr,y=count)) + geom_boxplot() + ggtitle("Hours")
+```
+
+As mentioned before "Hours " clearly affects count. As expected during the daytime more bikes are shared than at night. Interestingly, there is a spike at the 5PM hour, clearly showing that bikes get rented after the workday has finished.    
+
+```{r}
+ggplot(bike,aes(x=season,y=count)) + geom_boxplot() + ggtitle("Seasons")
+```
+
+I assume that "season" affects "count" less than "hours" as Fall, Spring and Summer seem very similar. Only Winter's boxplot exhibits a lower count than the other 3 seasons.    
+
+```{r}
+ggplot(bike,aes(x=mnth,y=count)) + geom_boxplot() + ggtitle("Months")
+```
+
+"mnth" also affect bike sharing numbers as biking in colder/wet weather is less preferred than during a nice spring or summer day. This is shown by low numbers in December, January and February. (How do I order the months???)
+
+```{r}
+ggplot(bike,aes(x=holiday,y=count)) + geom_boxplot() + ggtitle("Holidays")
+```
+
+Less clear are the median numbers for count in the "holiday" graph. One would assume that on Holidays more bikes get shared, but the numbers are such that the mean is higher for non-holidays. I believe that this is simply due to the fact there are only a "hand-full" of holidays compared the the 300+ non-holidays in a year. Or it could be that bike sharing in D.C. is used by workers to get to and from work.   
+
+```{r}
+ggplot(bike,aes(x=workingday,y=count)) + geom_boxplot() + ggtitle("Working Days")
+```
+
+The "workingday" boxplot resembles the "holiday" boxplot almost to the "T". I assume the same as "holiday".
+
+```{r}
+ggplot(bike,aes(x=weekday,y=count)) + geom_boxplot() + ggtitle("Weekdays")
+```
+
+The "weekday" boxplot seems pretty homogeneous, although the Saturday/Sunday numbers are lower than the rest of the week. Maybe this bike sharing option is mostly utilized by D.C workers during the workweek? I assume that this will affect count only minimally.      
+
+```{r}
+ggplot(bike,aes(x=weathersit,y=count)) + geom_boxplot() + ggtitle("Weather Situation")
+```
+
+The "weathersit" variable should affect "count". It is pretty obvious that less people will be biking in bad weather, therefore "HeavyPrecip" has lower count numbers that the highest: "NoPrecip".
+
+
+### Task 4
+
+```{r}
+modHr = lm(count~ hr, bike)
+summary(modHr)
+
+modTemp = lm(count ~ temp, bike)
+summary(modTemp)
+
+modWind = lm(count ~ windspeed, bike)
+summary(modWind)
+
+modSeas = lm(count ~ season, bike)
+summary(modSeas)
+```
+
+I ran 4 linear regression models with the first two the, seemingly, best models out of the correlation analysis (Temp) and the visualization of the categorical variables(hr). It is clear, that "hr" has the highest adjusted R-squared value of .5008. The p-values in all models are below .05 and are, therefore, significant variables. The signs of the coefficient seem logically correct. The other models' R-squared values cannot even compare to hr's, so I will go with "hr" as my predictor of "count".
+
+Above was a non-tidymodel approach, this time I will create a model using "hr" to predict "count" with a  *tidymodel*:
+
+```{r}
+#Recipe
+bike_recipe = recipe(count ~ hr, bike)
+
+#Model
+bike_model =
+  linear_reg() %>%
+  set_engine("lm")
+
+#Workflow
+bike_wflow = 
+  workflow() %>% 
+  add_model(bike_model) %>% 
+  add_recipe(bike_recipe)
+
+#Fit
+bike_fit = fit(bike_wflow, bike)
+summary(bike_fit$fit$fit$fit)
+```
+
+As before, the R-Squared value is .5008, which is rather mediocre. The hr variable is significant, because the p-value is below .05. I would go with the "hourly variable" to predict "count". I assume that if you had even more granular date (let's say by the minute) you probably would get a higher R-squared.
+
+
+### Task 5
+
+RIDGE
+
+```{r}
+#RECIPE
+bike_r_recipe <- recipe(count ~., bike) %>% 
+  step_rm(instant,dteday,registered,casual) %>%
+# steps_ns(hr, deg_free = 4) %>% #determine if any variables have a nonlinear relationship with the response. If so, it may be advisable to transform the predictor that is nonlinear or to fit with a spline. You wouldn't do this to predictors that are factors, only numeric ones 
+  step_dummy(all_nominal()) %>% 
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors()) 
+ 
+#RIDGE MODEL  
+bike_r_model = 
+  linear_reg(mixture = 0) %>% #mixture = 0 sets up Ridge Regression
+  set_engine("glmnet")
+
+#WORKFLOW
+bike_r_wflow = 
+  workflow() %>% 
+  add_model(bike_r_model) %>% 
+  add_recipe(bike_r_recipe)
+
+#FIT
+bike_r_fit = 
+  fit(bike_r_wflow,bike)
+```
+
+```{r}
+#PLUCK-IN
+bike_r_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  
+```
+
+```{r}
+bike_r_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  %>% 
+  coef(s = 47) 
+```
+
+We could go with the Ridge Model for the bike sharing dataset. There are variables that are near zero and there are a good number of variables approaching 0 when choosing a lambda of 47. Ideally you would want to see more variables approach zero, which we might see with the Lasso model:
+
+
+### Task 6
+
+LASSO
+
+```{r}
+#RECIPE
+bike_l_recipe <- recipe(count ~., bike) %>% 
+  step_rm(instant,dteday,registered,casual) %>%
+  step_dummy(all_nominal()) %>% 
+  step_center(all_predictors()) %>% 
+  step_scale(all_predictors()) 
+ 
+#RIDGE MODEL  
+bike_l_model = 
+  linear_reg(mixture = 1) %>% #mixture = 1 sets up Lasso Regression
+  set_engine("glmnet")
+
+#WORKFLOW
+bike_l_wflow = 
+  workflow() %>% 
+  add_model(bike_l_model) %>% 
+  add_recipe(bike_l_recipe)
+
+#FIT
+bike_l_fit = 
+  fit(bike_l_wflow,bike)
+```
+
+```{r}
+#PLUCK-IN
+bike_l_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  
+```
+
+```{r}
+bike_l_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")  %>% 
+  coef(s = 0.404) 
+```
+
+Oooh. I like the Lasso model much better than the Ridge model. Many more variables will not be considered (they dropped out of the model - they show just a "." which equals 0) making the model better in predicting "count".
+The implications are that with the Lasso model it is more likely that I predict correct count numbers or aleast count numbers that are close and not too far off the real numbers compared to the Ridge model, that includes variables that so not contribute valuable information and rather "muddy the waters".

@@ -1,0 +1,218 @@
+# Module 6 Assignment 1 -Clustering
+
+## Heinrich Wyschka
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(skimr)
+```
+
+```{r}
+trucks <- read_csv("trucks.csv")
+```
+
+
+### Task 1: 
+Plot the relationship between Distance and Speeding. Describe this relationship. Does there appear
+to be any natural clustering of drivers?
+
+```{r}
+ggplot(trucks, aes(x=Distance, y=Speeding)) + geom_point()
+```
+
+There seems to be two sets of distances or routes the drivers have: Routes that are between ~25-75 miles and routes that are between ~130-225 miles. two clusters each appear at theses ranges. There are only a few data points below 25 miles, 75-130 and above 225 mi. 
+
+In the *first range* (25-75 mi) there is a tight cluster of drivers, who sped as much as ~12% of their driving time, but there is another larger in area, farther-spread-out and less tight cluster which shows that some drivers sped between 12% to over 60% of the time over the speed limit in this range of distances.
+
+The *second range* of distances (130-225 mi) displays a similar pattern, but because the range is wider (25-75 mi versus 130-225 mi) the clusters are not as compact as the first range clusters and appear more "spread-out" horizontally and vertically. Also for the longer distance the first cluster extends to up to ~24% (versus ~12%) of driving over the speed limit. Compared to the first range the cluster the second set for the distance range extends way beyond the first distance range to all the way up to 100%. This means that there was at least 1 driver driving about 160 miles speeding at least more than 5 miles over the limit THE WHOLE WAY!
+
+To recap: Basically there are two clusters, a tight cluster and a loose cluster in two ranges of distance each, making it at least 4 clusters altogether. 
+
+## Task 2: 
+As we did in the second clustering example, create a new data frame called “trucks_cleaned” that
+contains the scaled and centered variables. Two notes: 1) The “predictor” variables in the recipe are “Distance”
+and “Speeding” and 2) There is no need to create dummy variables as there are no categorical variables in
+the data.
+
+```{r}
+kmeans_recipe = recipe(~ Distance + Speeding, trucks) 
+
+trucks_CenSca = kmeans_recipe %>% 
+  step_scale(all_numeric()) %>%
+  step_center(all_numeric()) 
+
+trucks_CenSca = prep(trucks_CenSca, trucks)
+
+trucks_cleaned = bake(trucks_CenSca, trucks)
+trucks_cleaned
+```
+
+
+### Task 3 
+Use k-Means clustering with two clusters (k=2) to cluster the “trucks_cleaned” data frame. Use a
+random number seed of 64. Use augment to add the resulting clusters object to the the “trucks” data frame.
+Design an appropriate visualization to visualize the clusters. Comment on the clusters.
+
+```{r}
+set.seed(64)
+clusts = 
+  tibble(k = 2) %>%
+  mutate(
+    kclust = map(k, ~kmeans(trucks_cleaned, .x)),
+    tidied = map(kclust, tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, trucks_cleaned)
+  )
+
+clusts
+```
+
+```{r}
+assignments = 
+  clusts %>% 
+  unnest(cols = c(augmented))
+assignments
+```
+
+```{r}
+p1 = 
+  ggplot(assignments, aes(x = Distance, y = Speeding)) +
+  geom_point(aes(color = .cluster), alpha = 0.8) + 
+  facet_wrap(~ k)
+p1
+```
+
+This is very similar to the observations I saw in the original scatter plot: There are two sets of "Distance". Since we are using a k=2, R did not identify the other two clusters I saw in the two distance ranges: the tight clusters and the loose clusters.
+
+
+### Task 4: 
+Create a visualization to show how the cluster appear from values of k from 1 to 8. Use a random
+number seed of 412. Which value of k appears to be most appropriate for this data?
+
+```{r}
+set.seed(412)
+clusts = 
+  tibble(k = 1:8) %>%
+  mutate(
+    kclust = map(k, ~kmeans(trucks_cleaned, .x)),
+    tidied = map(kclust, tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, trucks_cleaned)
+  )
+
+clusts
+```
+
+```{r}
+clusters = 
+  clusts %>%
+  unnest(cols = c(tidied))
+
+assignments = 
+  clusts %>% 
+  unnest(cols = c(augmented))
+
+clusterings = 
+  clusts %>%
+  unnest(cols = c(glanced))
+```
+
+```{r}
+p1 = 
+  ggplot(assignments, aes(x = Distance, y = Speeding)) +
+  geom_point(aes(color = .cluster), alpha = 0.8) + 
+  facet_wrap(~ k)
+p1
+```
+
+
+This facet shows the scatter plots for values of k from 1 to 8. Visually the Disance-Speeding plot with 4 clusters seems to look the best to me. Cluster 1, 2 and 3 miss the point of the the tight and loose clusters in the two distance ranges. Above 5 clusters R created only clusters range of distances, not in the larger one (130-225 mi). Visually again this seems odd as *both* distance ranges seem to have this tigh + loose cluster in them. Therefore some clustering should appear also in the larger distance range (130-225 mi) *if* there where more than 4 clusters.
+
+I find it courious that the data point ~110miles/4% speeding is never in cluster "2" (bottom right cluster). Although, it looks like it is supposed to, when you look at the visually short distance to it,it has a rather large distance to the bottom left cluster (where it is catergorized in). 
+
+### Task 5: 
+Create a plot of k versus within cluster sum of squares. Hint: We did this in the first clustering
+lecture. Which value of k appears to be best?
+
+
+```{r}
+ggplot(clusterings, aes(k, tot.withinss)) +
+  geom_line() +
+  geom_point()
+```
+
+
+This the "elbow graph". It shows where the point of diminishing returns is located, which seems to happen around after 4 clusters. This is what I saw before and seemed pretty obvious and consistent with this speeding data.
+
+
+### Task 6: 
+Repeat Task 3 for the number of clusters that you identifed in Task 5. Use the same random number
+seed as in Task 3. Don’t forget to include your visualization. Comment on the resulting clusters.
+
+
+```{r}
+set.seed(64)
+clusts = 
+  tibble(k = 4) %>%
+  mutate(
+    kclust = map(k, ~kmeans(trucks_cleaned, .x)),
+    tidied = map(kclust, tidy),
+    glanced = map(kclust, glance),
+    augmented = map(kclust, augment, trucks_cleaned)
+  )
+
+clusts
+```
+
+
+```{r}
+clusters = 
+  clusts %>%
+  unnest(cols = c(tidied))
+
+assignments = 
+  clusts %>% 
+  unnest(cols = c(augmented))
+
+clusterings = 
+  clusts %>%
+  unnest(cols = c(glanced))
+```
+
+```{r}
+p1 = 
+  ggplot(assignments, aes(x = Distance, y = Speeding)) +
+  geom_point(aes(color = .cluster), alpha = 0.8) + 
+  facet_wrap(~ k)
+p1
+```
+
+
+Yes, I like this visually the best of all the cluster options from the facet above. Three things I noticed that I would have clustered differently: 
+1. The .7/-.4 data point (which is the 110mi/4% data point above) still seems oddly associated with the cluster in the bottom left (south-west, here: red) of this graph. It seems too far away from it and much closer to the cluster in the bottom right (south-east, here purple). I would have added this point to the bottom-left, red cluster!
+
+2. Also the tightness of the bottom-left cluster seems to end just slightly above "0 Speeding". The loosely clustered points that are associated with the red cluster (bottom left) visually shopuld be gathered with the other loosely gathered cluster on the top left (north-west, teal). 
+
+3. Similar the more loosely clustered *purple* points I would have clustered with the top right cluster (green) above "1.1 Speeding".  
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

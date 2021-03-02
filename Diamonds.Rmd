@@ -1,0 +1,98 @@
+## Module 1 Assignment 3 Heinrich Wyschka
+
+### Task 1
+```{r}
+#install.packages(tidyverse)
+library(tidyverse)
+library(esquisse)
+```
+
+### Task 2
+```{r}
+diamonddata<-diamonds
+str(diamonddata)
+```
+
+### Task 3
+```{r}
+#diamonddata %>% summarize(max(price))
+ggplot(diamonddata, aes(x=carat, y=price)) + geom_point() + ggtitle("Carats vs Price")
+```
+
+Naturally, the heavier the diamonds are (higher carat) the more expensive they are. But one can see *lines* in the data at 0.75, 0.9, 1.0, 1.5, 2.0 and less obvious, but noticeable, at 3.0 carats. These lines might indicate that the weights are reaching a barrier. I am not sure what the reason is (yet), but I assume that diamond grinders want diamonds at the certain weights mentioned above (and not below that); they might use lower quality diamonds for that for sale. (A 1 carat diamond with 'imperfect' qualities is better than a .93 carat diamond that has been ground down to that weight to get rid of imperfections). The graph also shows that there are no diamonds above $18,823. The heaviest stone at 5 carats is not the priciest one. 
+
+### Task 4
+```{r}
+ggplot(diamonddata, aes(x=carat, y=price, color=cut)) + geom_point() + ggtitle("Carats/Price/Cut")
+```
+
+As mentioned before I believe that diamond grinders rather have a higher weight (carat) of a diamond than grinding away imperfections. The lines indicate that fair/good diamonds make up the bulk of the lines. Premium and ideal diamond just get ground to the best cut they can get no matter the weight. This is shown by the relative even distribution of Premium and Ideal cuts. The heaviest stones are of the lowest cut quality (fair), yet are pricey. 
+
+### Task 5
+```{r}
+ggplot(diamonddata, aes(x=carat, y=price, color=cut)) + geom_point() + facet_wrap(~color) + ggtitle("Carats/Price/Cut by Color facet")
+
+```
+
+The lines mentioned before are barely apparent in the faceted view that added the diamonds' color from D to J to the graph. One thing I noticed, though, is that lower grade colors seem lighter than higher grade ones.This shows for example in the facet with the lowest color "D": the majority of the diamonds weigh below 2 carats. The "curve" moves towards heavier stones the higher we go up the color quality to the highest color "J": about 50% of the stones having color "J" seem to be below and 50% above the 2 carat mark. To experiment with is observation I am faceting the same information only this time by the *cut*:
+
+```{r}
+ggplot(diamonddata, aes(x=carat, y=price, color=color)) + geom_point() + facet_wrap(~cut) + ggtitle("Carats/Price/Color by Cut facet")
+```
+
+As I theorized before when the cut of the diamonds are faceted we can see that the color gradients represent the diamonds' colors. It shows that the lower quality colors are, in general, also lighter in weight. "J"s show on the right side of the "curve" as being heavier stones. Especially the "Ideal" facet shows this quality.
+
+### Task 6
+```{r}
+Inventory <- read_csv("C:/Users/Henry/Google Drive/BAN/_BAN 502/Module 1/Assignment 3/InventoryData.csv")
+
+#view(Inventory)
+str(Inventory)
+summary(Inventory)
+```
+
+### Task 7
+
+"inventoryA" has 3,695 rows.
+
+```{r}
+inventoryA <- Inventory %>% filter(Supplier == "A")
+str(inventoryA)
+```
+
+### Task 8
+The line
+
+inventoryA = mutate(inventoryA, OnHandRatio = `On Hand` / `Annual Demand`)
+
+will add another column named "OnHandRatio" to "inventoryA" by performing the calculation of a number that is in `On Hand` divided by the number that is in `Annual Demand`.
+
+### Task 9
+```{r}
+avg_cost <- inventoryA %>% group_by(`Item SKU`) %>% summarize("SKUAvgCost"=mean(`Cost per Unit ($)`))
+#view(avg_cost)
+str(avg_cost)
+```
+
+### Task 10
+For me the most difficult part is the "language" of R. What I mean is that I forgot about the verbs, how to update R and RStudio, if there is a "." or an "_" for read_csv, etc... It is like learning a language and if you do not practice, you forget. I can tell you what makes it easier: Apps like Esquisser (had to look it up what the app was called) to make graphs. I trust that this will be helpful in classes like "Data Visualizations". Somethings else I noticed that will make it easier is repetition. The DataCamp helped to get back into the "groove" of typing R code. I just wished that different datasets had been used. (I believe I have muscle memory to typing "Percap") 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
